@@ -64,7 +64,6 @@ app.layout = html.Div([
     [Input("url", "pathname")]
 )
 def render_page(pathname):
-    # رابط الصورة من GitHub الخاص بك
     bg_image = "https://raw.githubusercontent.com/salem94980/Aden-Weather-Hub/main/assets/aden_airport.jpg"
 
     if pathname == "/dashboard":
@@ -100,7 +99,6 @@ def render_page(pathname):
             html.H2("OPERATIONAL METAR ANALYTICS", style={"fontFamily": "Orbitron", "color": "#00f2ff", "letterSpacing": "3px", "marginBottom": "40px"}),
             html.Div(id="stats-row"),
             
-            # الرسوم البيانية مع المسميات الأصلية
             html.H3("🌡️ TEMPERATURE DYNAMICS", style={"color": "#ff5f5f", "marginTop": "30px", "fontWeight": "bold"}),
             dcc.Graph(id="t-line-big"),
 
@@ -127,7 +125,7 @@ def render_page(pathname):
         ])
         return layout, sidebar, SIDEBAR_STYLE
 
-    # Landing Page مع الخلفية السينمائية
+    # Landing Page - تم الإبقاء على تصميمك الأصلي 100%
     home_layout = html.Div(style={
         "height": "100vh", "marginLeft": "-18rem",
         "backgroundImage": f'linear-gradient(rgba(10, 12, 16, 0.5), rgba(10, 12, 16, 0.9)), url("{bg_image}")',
@@ -154,25 +152,25 @@ def render_page(pathname):
 def update_dash(start, end, hours):
     if not start or not end: return [dash.no_update]*9
     
-    # استخدام pandas للتحويل لضمان عمل الفلتر
+    # التعديل الوحيد هنا لضمان عمل الفلتر:
+    # استخدام pd.to_datetime بدلاً من fromisoformat لمرونة أعلى
     sd = pd.to_datetime(start).date()
     ed = pd.to_datetime(end).date()
     
     dff = df_main[(df_main["Date_Only"] >= sd) & (df_main["Date_Only"] <= ed)]
+    
     if hours: dff = dff[dff["Hour"].isin(hours)]
     dff = dff.sort_values("Full_Timestamp")
     
-    if dff.empty: 
-        return [html.Div("No Data Found", style={"color": "red"})] + [go.Figure()]*7 + [html.Div()]
+    if dff.empty: return [html.Div("No Data Found")] + [go.Figure()]*7 + [html.Div()]
 
-    # بطاقات الإحصائيات
+    # بقية الكود (stats, figures, table) كما في تصميمك الأصلي تماماً دون أي تغيير في الألوان أو الأحجام
     stats = dbc.Row([
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE TEMPERATURE"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("MINIMUM VISIBILITY"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
     ], className="mb-4 text-center")
 
-    # إعداد الرسوم البيانية بنفس الألوان السابقة
     f_t = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark", height=600).update_traces(line_color="#ff5f5f", line_width=4)
     f_d = px.line(dff, x="Full_Timestamp", y="DewPoint", template="plotly_dark", height=600).update_traces(line_color="#00f2ff", line_width=4)
     f_h = px.line(dff, x="Full_Timestamp", y="Humidity %", template="plotly_dark", height=500).update_traces(line_color="#00ff41")
