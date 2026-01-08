@@ -17,28 +17,22 @@ def calculate_dewpoint(T, RH):
 # ===================== LOAD DATA =====================
 def load_data():
     try:
-        # قراءة الملف - تأكد من وجوده في المجلد الرئيسي في GitHub
         df = pd.read_excel("Aden_METAR_Final_Report.xlsx", engine='openpyxl')
         df.columns = df.columns.str.strip()
-        
-        # دمج التاريخ والوقت بناءً على أعمدة ملفك
         df["Full_Timestamp"] = pd.to_datetime(df["Date"].astype(str) + " " + df["UTC"].astype(str), errors="coerce")
         df["Display_Time"] = df["Full_Timestamp"].dt.strftime('%Y-%m-%d %H:%M')
         df["Date_Only"] = df["Full_Timestamp"].dt.date
         df["Hour"] = df["Full_Timestamp"].dt.hour
         
-        # تحويل البيانات الرقمية لضمان عمل المخططات
         numeric_cols = ["Temp C", "DewPt C", "Humidity %", "Pressure hPa", "Wind Spd KT", "Visibility M", "Lowest Cloud Base FT"]
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
         
-        # معالجة الرياح
         if "Wind Dir" in df.columns:
             df["Wind Dir"] = pd.to_numeric(df["Wind Dir"], errors="coerce")
         
         df["DewPoint"] = df.apply(lambda x: calculate_dewpoint(x["Temp C"], x["Humidity %"]), axis=1)
-        
         return df.dropna(subset=["Full_Timestamp"])
     except Exception as e:
         print(f"Error loading data: {e}")
@@ -47,13 +41,9 @@ def load_data():
 df_main = load_data()
 
 # ===================== DASH APP SETUP =====================
-app = dash.Dash(__name__, 
-                external_stylesheets=[dbc.themes.DARKLY], 
-                suppress_callback_exceptions=True)
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY], suppress_callback_exceptions=True)
+server = app.server
 
-server = app.server # ضروري لعمل الموقع على Render
-
-# القائمة الجانبية (Sidebar)
 SIDEBAR_STYLE = {
     "position": "fixed", "top": 0, "left": 0, "bottom": 0, "width": "18rem",
     "padding": "2rem 1rem", "backgroundColor": "#0a0c10", "borderRight": "2px solid #00f2ff", "zIndex": 100
@@ -61,8 +51,6 @@ SIDEBAR_STYLE = {
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
-    
-    # Sidebar
     html.Div(id="sidebar-div", style=SIDEBAR_STYLE, children=[
         html.H2("OYAA HUB", style={"fontFamily": "Orbitron", "color": "#00f2ff", "textAlign": "center", "fontSize": "22px"}),
         html.Hr(style={"borderColor": "#00f2ff", "opacity": "0.3"}),
@@ -73,8 +61,6 @@ app.layout = html.Div([
         html.Hr(style={"borderColor": "#00f2ff", "opacity": "0.3"}),
         html.Div(id="filters-container")
     ]),
-
-    # Main Content
     html.Div(id="page-content", style={"marginLeft": "18rem", "minHeight": "100vh"})
 ])
 
@@ -85,12 +71,10 @@ app.layout = html.Div([
     [Input("url", "pathname")]
 )
 def render_page(pathname):
-    # إخفاء القائمة الجانبية في الصفحة الرئيسية وإظهارها في التحليلات
     if pathname == "/dashboard":
         sidebar_style = SIDEBAR_STYLE
-        
         if df_main.empty:
-            return html.Div([html.H3("⚠️ ملف البيانات غير مكتمل أو غير موجود", style={"color":"orange", "padding":"50px"})]), [], sidebar_style
+            return html.Div([html.H3("⚠️ Data not loaded", style={"color":"orange", "padding":"50px"})]), [], sidebar_style
             
         max_dt = df_main["Date_Only"].max()
         filters = [
@@ -104,35 +88,28 @@ def render_page(pathname):
         layout = html.Div(style={"padding": "2.5rem", "backgroundColor": "#0d1117"}, children=[
             html.H2("OPERATIONAL METAR ANALYTICS", style={"fontFamily": "Orbitron", "color": "#00f2ff", "letterSpacing": "3px", "marginBottom": "40px"}),
             html.Div(id="stats-row"),
-            
-            html.H3("🌡️ TEMPERATURE DYNAMICS", style={"color": "#ff5f5f", "marginTop": "30px", "fontWeight": "bold"}),
+            html.H3("🌡️ TEMPERATURE DYNAMICS", style={"color": "#ff5f5f", "marginTop": "30px"}),
             dcc.Graph(id="t-line-big"),
-
-            html.H3("❄️ DEW POINT MONITOR", style={"color": "#00f2ff", "marginTop": "40px", "fontWeight": "bold"}),
+            html.H3("❄️ DEW POINT MONITOR", style={"color": "#00f2ff", "marginTop": "40px"}),
             dcc.Graph(id="d-line-big"),
-
-            html.H3("💧 HUMIDITY ANALYSIS", style={"color": "#00ff41", "marginTop": "40px", "fontWeight": "bold"}),
+            html.H3("💧 HUMIDITY ANALYSIS", style={"color": "#00ff41", "marginTop": "40px"}),
             dcc.Graph(id="h-line"),
-
-            html.H3("⏲️ QNH PRESSURE", style={"color": "#ffa500", "marginTop": "40px", "fontWeight": "bold"}),
+            html.H3("⏲️ QNH PRESSURE", style={"color": "#ffa500", "marginTop": "40px"}),
             dcc.Graph(id="p-line"),
-            
-            html.H3("☁️ CLOUD BASE & CONDITIONS", style={"color": "#00f2ff", "marginTop": "40px", "fontWeight": "bold"}),
+            html.H3("☁️ CLOUD BASE", style={"color": "#00f2ff", "marginTop": "40px"}),
             dcc.Graph(id="c-scatter-large"),
-
-            html.H3("💨 WIND ROSE ANALYSIS", style={"color": "#00f2ff", "marginTop": "40px", "fontWeight": "bold"}),
+            html.H3("💨 WIND ROSE", style={"color": "#00f2ff", "marginTop": "40px"}),
             dcc.Graph(id="w-rose"),
-
-            html.H3("📜 SYSTEM LOGS", style={"color": "#8b949e", "marginTop": "60px", "fontWeight": "bold"}),
+            html.H3("📜 LOGS", style={"color": "#8b949e", "marginTop": "60px"}),
             html.Div(id="metar-table-area", style={"marginBottom": "100px"})
         ])
         return layout, filters, sidebar_style
 
-    # الصفحة الرئيسية (Landing Page) مع الخلفية
+    # Landing Page - تم تحديث الرابط هنا
     sidebar_hidden = {**SIDEBAR_STYLE, "display": "none"}
     home_layout = html.Div(style={
-        "height": "100vh", "marginLeft": "-18rem", # إلغاء إزاحة المنيو في الصفحة الرئيسية
-        "backgroundImage": f'linear-gradient(rgba(10, 12, 16, 0.6), rgba(10, 12, 16, 0.9)), url("{app.get_asset_url("aden_airport.jpg")}")',
+        "height": "100vh", "marginLeft": "-18rem",
+        "backgroundImage": 'linear-gradient(rgba(10, 12, 16, 0.6), rgba(10, 12, 16, 0.9)), url("https://raw.githubusercontent.com/salem94980/Aden-Weather-Hub/main/assets/aden_airport.jpg")',
         "backgroundSize": "cover", "backgroundPosition": "center", "backgroundAttachment": "fixed",
         "display": "flex", "flexDirection": "column", "justifyContent": "center", "alignItems": "center", "textAlign": "center"
     }, children=[
@@ -158,13 +135,12 @@ def update_dash(start, end, hours):
     dff = df_main[(df_main["Date_Only"] >= date.fromisoformat(start)) & (df_main["Date_Only"] <= date.fromisoformat(end))]
     if hours: dff = dff[dff["Hour"].isin(hours)]
     dff = dff.sort_values("Full_Timestamp")
-    
-    if dff.empty: return [html.Div("No Data Found")] + [go.Figure()]*6 + [html.Div()]
+    if dff.empty: return [html.Div("No Data")] + [go.Figure()]*6 + [html.Div()]
 
     stats = dbc.Row([
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVG TEMP"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVG HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22"})),
-        dbc.Col(dbc.Card([dbc.CardBody([html.H6("MIN VISIBILITY"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22"})),
+        dbc.Col(dbc.Card([dbc.CardBody([html.H6("MIN VIS"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22"})),
     ], className="mb-4 text-center")
 
     f_t = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark", height=500).update_traces(line_color="#ff5f5f", line_width=4)
@@ -184,7 +160,6 @@ def update_dash(start, end, hours):
         style_cell={"backgroundColor": "#0d1117", "color": "#c9d1d9", "textAlign": "left", "fontFamily": "monospace"},
         style_header={"backgroundColor": "#161b22", "color": "#00f2ff"}
     )
-
     return stats, f_t, f_d, f_h, f_p, f_c, f_w, table
 
 if __name__ == "__main__":
