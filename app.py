@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-from datetime import date, timedelta
+from datetime import timedelta
 
 # ===================== FUNCTIONS =====================
 def calculate_dewpoint(T, RH):
@@ -15,44 +15,35 @@ def calculate_dewpoint(T, RH):
     return (243.5 * gamma) / (17.67 - gamma)
 
 # ===================== LOAD DATA =====================
-def load_data():
-    df = pd.read_excel("Aden_METAR_Final_Report.xlsx")
-    df.columns = df.columns.str.strip()
+df = pd.read_excel("Aden_METAR_Final_Report.xlsx")
+df.columns = df.columns.str.strip()
 
-    df["Full_Timestamp"] = pd.to_datetime(
-        df["Date"].astype(str) + " " + df["UTC"].astype(str),
-        errors="coerce"
-    )
+df["Full_Timestamp"] = pd.to_datetime(
+    df["Date"].astype(str) + " " + df["UTC"].astype(str),
+    errors="coerce"
+)
 
-    df["Display_Time"] = df["Full_Timestamp"].dt.strftime("%Y-%m-%d   %H:%M")
-    df["Date_Only"] = df["Full_Timestamp"].dt.date
-    df["Hour"] = df["Full_Timestamp"].dt.hour
+df["Date_Only"] = df["Full_Timestamp"].dt.date
+df["Hour"] = df["Full_Timestamp"].dt.hour
+df["Display_Time"] = df["Full_Timestamp"].dt.strftime("%Y-%m-%d %H:%M")
 
-    num_cols = [
-        "Temp C", "Visibility M", "Humidity %",
-        "Pressure hPa", "Wind Dir", "Lowest Cloud Base FT"
-    ]
+num_cols = [
+    "Temp C", "Humidity %", "Pressure hPa",
+    "Visibility M", "Wind Dir", "Lowest Cloud Base FT"
+]
+for c in num_cols:
+    if c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    for col in num_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+df["Wind Spd KT"] = (
+    df["Wind Spd KT"].astype(str).str.extract(r"(\d+)").astype(float)
+)
 
-    if "Wind Spd KT" in df.columns:
-        df["Wind Spd KT"] = (
-            df["Wind Spd KT"].astype(str)
-            .str.extract(r"(\d+)")
-            .astype(float)
-        )
+df["DewPoint"] = df.apply(
+    lambda x: calculate_dewpoint(x["Temp C"], x["Humidity %"]), axis=1
+)
 
-    df["Sky Conditions"] = df["Sky Conditions"].fillna("SKC")
-    df["DewPoint"] = df.apply(
-        lambda x: calculate_dewpoint(x["Temp C"], x["Humidity %"]),
-        axis=1
-    )
-
-    return df.dropna(subset=["Full_Timestamp"])
-
-df_main = load_data()
+df = df.dropna(subset=["Full_Timestamp"])
 
 # ===================== DASH APP =====================
 app = dash.Dash(
@@ -64,190 +55,96 @@ server = app.server
 
 # ===================== LAYOUT =====================
 app.layout = html.Div([
-    dcc.Location(id="url", refresh=False),
+    dcc.Location(id="url"),
 
-    # ===== SIDEBAR =====
+    # SIDEBAR
     html.Div(
         id="sidebar-container",
         style={
-            "position": "fixed",
-            "top": 0,
-            "left": 0,
-            "bottom": 0,
-            "width": "18rem",
-            "padding": "2rem 1rem",
-            "backgroundColor": "#0a0c10",
-            "borderRight": "1px solid #1a1e26",
-            "zIndex": 100
+            "position": "fixed", "top": 0, "left": 0, "bottom": 0,
+            "width": "18rem", "padding": "2rem 1rem",
+            "backgroundColor": "#0a0c10", "borderRight": "1px solid #1a1e26"
         },
         children=[
-            html.H2(
-                "OYAA HUB",
-                style={
-                    "fontFamily": "Orbitron",
-                    "color": "#00f2ff",
-                    "textAlign": "center",
-                    "fontSize": "22px"
-                }
-            ),
-            html.Hr(style={"borderColor": "#00f2ff", "opacity": 0.3}),
-
+            html.H2("OYAA HUB", style={
+                "color": "#00f2ff", "textAlign": "center",
+                "fontFamily": "Orbitron"
+            }),
             dbc.Nav(
                 [
                     dbc.NavLink("🏠 HOME", href="/", active="exact"),
                     dbc.NavLink("📊 ANALYTICS", href="/dashboard", active="exact"),
                 ],
-                vertical=True,
-                pills=True,
+                vertical=True, pills=True
             ),
-
-            html.Hr(style={"borderColor": "#00f2ff", "opacity": 0.3}),
-            html.Div(id="filters-container"),
-        ],
+            html.Hr(),
+            html.Div(id="filters-container")
+        ]
     ),
 
-    html.Div(
-        id="page-content",
-        style={"marginLeft": "18rem", "minHeight": "100vh"},
-    ),
+    html.Div(id="page-content", style={"marginLeft": "18rem"})
 ])
 
-# ===================== PAGE ROUTING =====================
+# ===================== ROUTING =====================
 @app.callback(
-    [
-        Output("page-content", "children"),
-        Output("filters-container", "children"),
-        Output("sidebar-container", "style"),
-    ],
-    Input("url", "pathname"),
+    [Output("page-content", "children"),
+     Output("filters-container", "children")],
+    Input("url", "pathname")
 )
 def render_page(pathname):
 
-    sidebar_style = {
-        "position": "fixed",
-        "top": 0,
-        "left": 0,
-        "bottom": 0,
-        "width": "18rem",
-        "padding": "2rem 1rem",
-        "backgroundColor": "#0a0c10",
-        "borderRight": "1px solid #1a1e26",
-        "zIndex": 100,
-    }
-
     if pathname == "/dashboard":
-
-        max_dt = df_main["Date_Only"].max()
+        max_dt = df["Date_Only"].max()
 
         filters = [
-            html.Label(
-                "TIME RANGE",
-                style={
-                    "fontSize": "11px",
-                    "color": "#8b949e",
-                    "letterSpacing": "1.5px",
-                },
-            ),
+            html.Label("TIME RANGE"),
             dcc.DatePickerRange(
                 id="d-picker",
                 start_date=max_dt - timedelta(days=7),
                 end_date=max_dt,
-                display_format="YYYY-MM-DD",
-                persistence=True,
-                persisted_props=["start_date", "end_date"],
+                persistence=True
             ),
-            html.Br(),
-            html.Br(),
-            html.Label(
-                "HOUR SELECTOR (UTC)",
-                style={
-                    "fontSize": "11px",
-                    "color": "#8b949e",
-                    "letterSpacing": "1.5px",
-                },
-            ),
+            html.Br(), html.Br(),
+            html.Label("HOUR (UTC)"),
             dcc.Dropdown(
                 id="h-drop",
-                options=[
-                    {"label": f"{h:02d}:00", "value": h} for h in range(24)
-                ],
+                options=[{"label": f"{h:02d}", "value": h} for h in range(24)],
                 multi=True,
-                style={"color": "black"},
-                persistence=True,
-            ),
+                style={"color": "black"}
+            )
         ]
 
-        layout = html.Div(
-            style={"padding": "2.5rem", "backgroundColor": "#0d1117"},
-            children=[
-                html.H2(
-                    "OPERATIONAL METAR ANALYTICS",
-                    style={
-                        "fontFamily": "Orbitron",
-                        "color": "#00f2ff",
-                        "letterSpacing": "3px",
-                        "marginBottom": "40px",
-                    },
-                ),
-                html.Div(id="stats-row"),
+        layout = html.Div(style={"padding": "2rem"}, children=[
+            html.H2("METAR ANALYTICS", style={"color": "#00f2ff"}),
 
-                html.H3("🌡️ TEMPERATURE DYNAMICS", style={"color": "#ff5f5f"}),
-                dcc.Graph(id="t-line-big"),
+            html.Div(id="stats-row"),
 
-                html.H3("❄️ DEW POINT MONITOR", style={"color": "#00f2ff"}),
-                dcc.Graph(id="d-line-big"),
+            dcc.Graph(id="temp-fig"),
+            dcc.Graph(id="dew-fig"),
+            dcc.Graph(id="pressure-fig"),
+            dcc.Graph(id="windspd-fig"),
+            dcc.Graph(id="vis-fig"),
+            dcc.Graph(id="winddir-fig"),
 
-                html.H3("📜 SYSTEM LOGS", style={"color": "#8b949e"}),
-                html.Div(id="metar-table-area"),
-            ],
-        )
+            html.H3("RAW METAR"),
+            html.Div(id="table-area")
+        ])
 
-        return layout, filters, sidebar_style
+        return layout, filters
 
-    # ===== HOME PAGE =====
-    home = html.Div(
-        style={
-            "height": "100vh",
-            "marginLeft": "-18rem",
-            "display": "flex",
-            "justifyContent": "center",
-            "alignItems": "center",
-            "flexDirection": "column",
-            "backgroundColor": "#0d1117",
-        },
-        children=[
-            html.H1(
-                "OYAA INTELHUB",
-                style={
-                    "fontSize": "90px",
-                    "color": "white",
-                    "fontFamily": "Orbitron",
-                },
-            ),
-            html.A(
-                html.Button(
-                    "INITIATE ANALYTICS",
-                    style={
-                        "background": "transparent",
-                        "color": "#00f2ff",
-                        "border": "2px solid #00f2ff",
-                        "padding": "15px 40px",
-                    },
-                ),
-                href="/dashboard",
-            ),
-        ],
-    )
+    return html.H1("OYAA INTELHUB", style={"color": "white"}), []
 
-    return home, [], {"display": "none"}
-
-# ===================== MAIN DASH CALLBACK =====================
+# ===================== MAIN CALLBACK =====================
 @app.callback(
     [
         Output("stats-row", "children"),
-        Output("t-line-big", "figure"),
-        Output("d-line-big", "figure"),
-        Output("metar-table-area", "children"),
+        Output("temp-fig", "figure"),
+        Output("dew-fig", "figure"),
+        Output("pressure-fig", "figure"),
+        Output("windspd-fig", "figure"),
+        Output("vis-fig", "figure"),
+        Output("winddir-fig", "figure"),
+        Output("table-area", "children"),
     ],
     [
         Input("url", "pathname"),
@@ -255,75 +152,56 @@ def render_page(pathname):
         Input("d-picker", "end_date"),
         Input("h-drop", "value"),
     ],
-    prevent_initial_call=True,
+    prevent_initial_call=True
 )
-def update_dashboard(pathname, start, end, hours):
+def update_all(path, start, end, hours):
 
-    if pathname != "/dashboard":
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    if path != "/dashboard":
+        return [dash.no_update] * 8
 
-    if not start or not end:
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    dff = df.copy()
 
-    sd = pd.to_datetime(start).date()
-    ed = pd.to_datetime(end).date()
-
-    dff = df_main[
-        (df_main["Date_Only"] >= sd) &
-        (df_main["Date_Only"] <= ed)
-    ].copy()
+    if start and end:
+        dff = dff[
+            (dff["Date_Only"] >= pd.to_datetime(start).date()) &
+            (dff["Date_Only"] <= pd.to_datetime(end).date())
+        ]
 
     if hours:
         dff = dff[dff["Hour"].isin(hours)]
 
-    dff = dff.sort_values("Full_Timestamp")
-
-    if dff.empty:
-        msg = html.Div("No Data Found", style={"color": "orange"})
-        return msg, go.Figure(), go.Figure(), html.Div()
-
+    # ===== STATS =====
     stats = dbc.Row([
-        dbc.Col(
-            dbc.Card(
-                dbc.CardBody([
-                    html.H6("AVG TEMP"),
-                    html.H3(f"{dff['Temp C'].mean():.1f} °C")
-                ])
-            )
-        )
+        dbc.Col(dbc.Card(dbc.CardBody([
+            html.H6("AVG TEMP"),
+            html.H3(f"{dff['Temp C'].mean():.1f} °C")
+        ])))
     ])
 
-    fig_t = px.line(
-        dff,
-        x="Full_Timestamp",
-        y="Temp C",
-        template="plotly_dark",
-        height=600,
-    ).update_traces(line_color="#ff5f5f")
+    # ===== FIGURES =====
+    f_temp = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark")
+    f_dew = px.line(dff, x="Full_Timestamp", y="DewPoint", template="plotly_dark")
+    f_pres = px.line(dff, x="Full_Timestamp", y="Pressure hPa", template="plotly_dark")
+    f_wind = px.line(dff, x="Full_Timestamp", y="Wind Spd KT", template="plotly_dark")
+    f_vis = px.line(dff, x="Full_Timestamp", y="Visibility M", template="plotly_dark")
 
-    fig_d = px.line(
-        dff,
-        x="Full_Timestamp",
-        y="DewPoint",
-        template="plotly_dark",
-        height=600,
-    ).update_traces(line_color="#00f2ff")
+    f_dir = px.scatter_polar(
+        dff, r="Wind Spd KT", theta="Wind Dir",
+        template="plotly_dark"
+    )
 
     table = dash_table.DataTable(
         data=dff[["Display_Time", "METAR"]].to_dict("records"),
         columns=[
-            {"name": "UTC TIMESTAMP", "id": "Display_Time"},
-            {"name": "RAW METAR", "id": "METAR"},
+            {"name": "TIME", "id": "Display_Time"},
+            {"name": "METAR", "id": "METAR"}
         ],
-        style_table={"height": "300px", "overflowY": "auto"},
-        style_cell={
-            "backgroundColor": "#0d1117",
-            "color": "#c9d1d9",
-        },
+        style_table={"overflowY": "auto", "height": "300px"},
+        style_cell={"backgroundColor": "#0d1117", "color": "white"}
     )
 
-    return stats, fig_t, fig_d, table
+    return stats, f_temp, f_dew, f_pres, f_wind, f_vis, f_dir, table
 
-
+# ===================== RUN =====================
 if __name__ == "__main__":
     app.run_server(debug=True)
