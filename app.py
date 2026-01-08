@@ -18,9 +18,7 @@ def load_data():
     try:
         df = pd.read_excel("Aden_METAR_Final_Report.xlsx")
         df.columns = df.columns.str.strip()
-        # تنظيف وتحويل التواريخ
-        df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
-        df["Full_Timestamp"] = pd.to_datetime(df["Date"].dt.strftime('%Y-%m-%d') + " " + df["UTC"].astype(str), errors="coerce")
+        df["Full_Timestamp"] = pd.to_datetime(df["Date"].astype(str) + " " + df["UTC"].astype(str), errors="coerce")
         df["Display_Time"] = df["Full_Timestamp"].dt.strftime('%Y-%m-%d   %H:%M')
         df["Date_Only"] = df["Full_Timestamp"].dt.date
         df["Hour"] = df["Full_Timestamp"].dt.hour
@@ -32,40 +30,55 @@ def load_data():
         if "Wind Spd KT" in df.columns:
             df["Wind Spd KT"] = df["Wind Spd KT"].astype(str).str.extract(r"(\d+)").astype(float)
         
-        df["Sky Conditions"] = df["Sky Conditions"].fillna("SKC") if "Sky Conditions" in df.columns else "Unknown"
+        df["Sky Conditions"] = df["Sky Conditions"].fillna("SKC")
         df["Present Weather"] = df["Present Weather"].fillna("NIL")
         df["DewPoint"] = df.apply(lambda x: calculate_dewpoint(x["Temp C"], x["Humidity %"]), axis=1)
         
         return df.dropna(subset=["Full_Timestamp"])
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error Loading: {e}")
         return pd.DataFrame()
 
 df_main = load_data()
+max_dt = df_main["Date_Only"].max() if not df_main.empty else date.today()
+min_dt = df_main["Date_Only"].min() if not df_main.empty else date.today()
 
 # ===================== DASH APP =====================
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY], suppress_callback_exceptions=True)
 
-# وضع الفلاتر في الـ Layout الرئيسي لكن مخفية، لضمان استجابة الـ Callback
+# الـ Layout الآن يحتوي على كل شيء بشكل ثابت لضمان الاستجابة
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     
-    # Sidebar
-    html.Div(style={
+    # Sidebar الثابت
+    html.Div(id="sidebar", style={
         "position": "fixed", "top": 0, "left": 0, "bottom": 0, 
         "width": "18rem", "padding": "2rem 1rem", "backgroundColor": "#0a0c10", 
         "borderRight": "1px solid #1a1e26", "zIndex": 100
     }, children=[
-        html.H2("OYAA HUB", style={"fontFamily": "Orbitron", "color": "#00f2ff", "textAlign": "center", "fontSize": "22px"}),
+        html.H2("OYAA HUB", style={"fontFamily": "Orbitron", "color": "#00f2ff", "textAlign": "center"}),
         html.Hr(style={"borderColor": "#00f2ff", "opacity": "0.3"}),
         dbc.Nav([
-            dbc.NavLink("🏠 HOME", href="/", active="exact", style={"borderRadius": "8px", "marginBottom": "10px"}),
-            dbc.NavLink("📊 ANALYTICS", href="/dashboard", active="exact", style={"borderRadius": "8px"}),
+            dbc.NavLink("🏠 HOME", href="/", active="exact"),
+            dbc.NavLink("📊 ANALYTICS", href="/dashboard", active="exact"),
         ], vertical=True, pills=True),
         html.Hr(style={"borderColor": "#00f2ff", "opacity": "0.3"}),
         
-        # حاوية الفلاتر - ستظهر فقط في صفحة الداشبورد
-        html.Div(id="filters-container")
+        # الفلاتر موجودة هنا دائماً، نتحكم في ظهورها بـ Style
+        html.Div(id="filter-area", children=[
+            html.Label("TIME RANGE", style={"fontSize": "11px", "color": "#8b949e"}),
+            dcc.DatePickerRange(
+                id="d-picker",
+                min_date_allowed=min_dt,
+                max_date_allowed=max_dt,
+                start_date=max_dt - timedelta(days=7),
+                end_date=max_dt,
+                display_format='YYYY-MM-DD'
+            ),
+            html.Br(), html.Br(),
+            html.Label("HOUR SELECTOR (UTC)", style={"fontSize": "11px", "color": "#8b949e"}),
+            dcc.Dropdown(id="h-drop", options=[{"label": f"{h:02d}:00", "value": h} for h in range(24)], multi=True, style={"color": "black"})
+        ])
     ]),
 
     html.Div(id="page-content", style={"marginLeft": "18rem", "minHeight": "100vh"})
@@ -74,58 +87,29 @@ app.layout = html.Div([
 # ===================== CALLBACKS =====================
 
 @app.callback(
-    [Output("page-content", "children"), Output("filters-container", "children")],
+    [Output("page-content", "children"), Output("filter-area", "style")],
     [Input("url", "pathname")]
 )
-def render_page(pathname):
+def display_page(pathname):
     if pathname == "/dashboard":
-        # حساب النطاق المتاح في الإكسل
-        min_avail = df_main["Date_Only"].min() if not df_main.empty else date.today()
-        max_avail = df_main["Date_Only"].max() if not df_main.empty else date.today()
-        
-        filters = [
-            html.Label("TIME RANGE", style={"fontSize": "11px", "color": "#8b949e", "letterSpacing": "1.5px"}),
-            dcc.DatePickerRange(
-                id="d-picker",
-                min_date_allowed=min_avail,
-                max_date_allowed=max_avail,
-                start_date=min_avail,
-                end_date=max_avail,
-                display_format='YYYY-MM-DD'
-            ),
-            html.Br(), html.Br(),
-            html.Label("HOUR SELECTOR (UTC)", style={"fontSize": "11px", "color": "#8b949e", "letterSpacing": "1.5px"}),
-            dcc.Dropdown(id="h-drop", options=[{"label": f"{h:02d}:00", "value": h} for h in range(24)], multi=True, style={"color": "black"})
-        ]
-        
-        layout = html.Div(style={"padding": "2.5rem", "backgroundColor": "#0d1117"}, children=[
-            html.H2("OPERATIONAL METAR ANALYTICS", style={"fontFamily": "Orbitron", "color": "#00f2ff", "letterSpacing": "3px", "marginBottom": "40px"}),
+        return html.Div(style={"padding": "2.5rem", "backgroundColor": "#0d1117"}, children=[
+            html.H2("OPERATIONAL METAR ANALYTICS", style={"fontFamily": "Orbitron", "color": "#00f2ff"}),
             html.Div(id="stats-row"),
-            
-            html.H3("🌡️ TEMPERATURE DYNAMICS", style={"color": "#ff5f5f", "marginTop": "30px", "fontWeight": "bold"}),
             dcc.Graph(id="t-line-big"),
-            html.H3("❄️ DEW POINT MONITOR", style={"color": "#00f2ff", "marginTop": "40px", "fontWeight": "bold"}),
             dcc.Graph(id="d-line-big"),
-            html.H3("💧 HUMIDITY ANALYSIS", style={"color": "#00ff41", "marginTop": "40px", "fontWeight": "bold"}),
             dcc.Graph(id="h-line"),
-            html.H3("⏲️ QNH PRESSURE", style={"color": "#ffa500", "marginTop": "40px", "fontWeight": "bold"}),
             dcc.Graph(id="p-line"),
-            html.H3("☁️ CLOUD BASE & CONDITIONS", style={"color": "#00f2ff", "marginTop": "40px", "fontWeight": "bold"}),
             dcc.Graph(id="c-scatter-large"),
-            html.H3("💨 WIND ROSE ANALYSIS", style={"color": "#00f2ff", "marginTop": "40px", "fontWeight": "bold"}),
             dcc.Graph(id="w-rose"),
-            html.H3("🌩️ WEATHER PHENOMENA", style={"color": "#00f2ff", "marginTop": "40px", "fontWeight": "bold"}),
             dcc.Graph(id="events-pie"),
-            html.H3("📜 SYSTEM LOGS", style={"color": "#8b949e", "marginTop": "60px", "fontWeight": "bold"}),
             html.Div(id="metar-table-area", style={"marginBottom": "100px"})
-        ])
-        return layout, filters
+        ]), {"display": "block"} # إظهار الفلاتر
     
-    # Home Page
-    return html.Div(style={"textAlign": "center", "paddingTop": "100px"}, children=[
-        html.H1("OYAA INTELHUB", style={"fontSize": "60px", "fontFamily": "Orbitron"}),
-        html.A(dbc.Button("INITIATE ANALYTICS", color="info"), href="/dashboard")
-    ]), []
+    # الصفحة الرئيسية
+    return html.Div(style={"height": "100vh", "display": "flex", "justifyContent": "center", "alignItems": "center"}, children=[
+        html.H1("WELCOME TO OYAA HUB", style={"fontFamily": "Orbitron", "color": "white"}),
+        html.A(dbc.Button("OPEN DASHBOARD", color="info"), href="/dashboard")
+    ]), {"display": "none"} # إخفاء الفلاتر
 
 @app.callback(
     [Output("stats-row", "children"), Output("t-line-big", "figure"), Output("d-line-big", "figure"), 
@@ -134,47 +118,37 @@ def render_page(pathname):
     [Input("d-picker", "start_date"), Input("d-picker", "end_date"), Input("h-drop", "value")]
 )
 def update_dash(start, end, hours):
-    # إذا لم يتم اختيار تاريخ، لا تفعل شيئاً
-    if not start or not end:
-        return [dash.no_update]*9
-
-    # تحويل التواريخ القادمة من الفلتر إلى صيغة date للمقارنة الصحيحة
-    start_date = pd.to_datetime(start).date()
-    end_date = pd.to_datetime(end).date()
-
-    # التصفية
-    mask = (df_main["Date_Only"] >= start_date) & (df_main["Date_Only"] <= end_date)
-    dff = df_main.loc[mask].copy()
-
-    if hours:
-        dff = dff[dff["Hour"].isin(hours)]
-
+    # تحويل التواريخ فوراً لضمان المطابقة
+    sd = pd.to_datetime(start).date()
+    ed = pd.to_datetime(end).date()
+    
+    dff = df_main[(df_main["Date_Only"] >= sd) & (df_main["Date_Only"] <= ed)]
+    if hours: dff = dff[dff["Hour"].isin(hours)]
     dff = dff.sort_values("Full_Timestamp")
-
+    
     if dff.empty:
-        return [html.Div("No Data Found", style={"color": "orange"})] + [go.Figure()]*7 + [html.Div()]
+        return [html.Div("No Data Found", style={"color": "red"})] + [go.Figure()]*7 + [html.Div()]
 
-    # بناء المكونات (Stats, Charts, Table)
     stats = dbc.Row([
-        dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE TEMPERATURE"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
-        dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
-        dbc.Col(dbc.Card([dbc.CardBody([html.H6("MINIMUM VISIBILITY"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
+        dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE TEMPERATURE"), html.H3(f"{dff['Temp C'].mean():.1f}°C")])])),
+        dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%")])])),
+        dbc.Col(dbc.Card([dbc.CardBody([html.H6("MINIMUM VISIBILITY"), html.H3(f"{dff['Visibility M'].min():.0f} m")])])),
     ], className="mb-4 text-center")
 
-    # الرسوم البيانية (Charts)
+    # الرسوم البيانية
     f_t = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark").update_traces(line_color="#ff5f5f")
     f_d = px.line(dff, x="Full_Timestamp", y="DewPoint", template="plotly_dark").update_traces(line_color="#00f2ff")
-    f_h = px.line(dff, x="Full_Timestamp", y="Humidity %", template="plotly_dark").update_traces(line_color="#00ff41")
-    f_p = px.line(dff, x="Full_Timestamp", y="Pressure hPa", template="plotly_dark").update_traces(line_color="#ffa500")
-    f_ev = px.pie(dff, names="Present Weather", template="plotly_dark", hole=0.4)
+    f_h = px.line(dff, x="Full_Timestamp", y="Humidity %", template="plotly_dark")
+    f_p = px.line(dff, x="Full_Timestamp", y="Pressure hPa", template="plotly_dark")
+    f_ev = px.pie(dff, names="Present Weather", template="plotly_dark")
     f_c = px.scatter(dff, x="Full_Timestamp", y="Lowest Cloud Base FT", color="Sky Conditions", template="plotly_dark")
     f_w = px.bar_polar(dff, r="Wind Spd KT", theta="Wind Dir", color="Wind Spd KT", template="plotly_dark")
 
     table = dash_table.DataTable(
         data=dff[["Display_Time", "METAR"]].to_dict("records"),
-        columns=[{"name": "TIME", "id": "Display_Time"}, {"name": "METAR", "id": "METAR"}],
+        columns=[{"name": "UTC TIMESTAMP", "id": "Display_Time"}, {"name": "RAW METAR", "id": "METAR"}],
         style_table={'height': '300px', 'overflowY': 'auto'},
-        style_cell={'backgroundColor': '#0d1117', 'color': 'white', 'textAlign': 'left'}
+        style_cell={'backgroundColor': '#161b22', 'color': 'white', 'textAlign': 'left'}
     )
 
     return stats, f_t, f_d, f_h, f_p, f_ev, f_c, f_w, table
