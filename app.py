@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-from datetime import timedelta
+from datetime import date, timedelta
 
 # ===================== FUNCTIONS =====================
 def calculate_dewpoint(T, RH):
@@ -23,9 +23,9 @@ df["Full_Timestamp"] = pd.to_datetime(
     errors="coerce"
 )
 
+df["Display_Time"] = df["Full_Timestamp"].dt.strftime("%Y-%m-%d %H:%M")
 df["Date_Only"] = df["Full_Timestamp"].dt.date
 df["Hour"] = df["Full_Timestamp"].dt.hour
-df["Display_Time"] = df["Full_Timestamp"].dt.strftime("%Y-%m-%d %H:%M")
 
 num_cols = [
     "Temp C", "Humidity %", "Pressure hPa",
@@ -35,12 +35,18 @@ for c in num_cols:
     if c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-df["Wind Spd KT"] = (
-    df["Wind Spd KT"].astype(str).str.extract(r"(\d+)").astype(float)
-)
+if "Wind Spd KT" in df.columns:
+    df["Wind Spd KT"] = (
+        df["Wind Spd KT"].astype(str)
+        .str.extract(r"(\d+)")
+        .astype(float)
+    )
+
+df["Sky Conditions"] = df["Sky Conditions"].fillna("SKC")
 
 df["DewPoint"] = df.apply(
-    lambda x: calculate_dewpoint(x["Temp C"], x["Humidity %"]), axis=1
+    lambda x: calculate_dewpoint(x["Temp C"], x["Humidity %"]),
+    axis=1
 )
 
 df = df.dropna(subset=["Full_Timestamp"])
@@ -53,98 +59,200 @@ app = dash.Dash(
 )
 server = app.server
 
-# ===================== LAYOUT =====================
+# ===================== MAIN LAYOUT =====================
 app.layout = html.Div([
-    dcc.Location(id="url"),
+    dcc.Location(id="url", refresh=False),
 
-    # SIDEBAR
+    # ===== SIDEBAR =====
     html.Div(
         id="sidebar-container",
         style={
-            "position": "fixed", "top": 0, "left": 0, "bottom": 0,
-            "width": "18rem", "padding": "2rem 1rem",
-            "backgroundColor": "#0a0c10", "borderRight": "1px solid #1a1e26"
+            "position": "fixed",
+            "top": 0,
+            "left": 0,
+            "bottom": 0,
+            "width": "18rem",
+            "padding": "2rem 1rem",
+            "backgroundColor": "#0a0c10",
+            "borderRight": "1px solid #1a1e26",
+            "zIndex": 100
         },
         children=[
-            html.H2("OYAA HUB", style={
-                "color": "#00f2ff", "textAlign": "center",
-                "fontFamily": "Orbitron"
-            }),
+            html.H2(
+                "OYAA HUB",
+                style={
+                    "fontFamily": "Orbitron",
+                    "color": "#00f2ff",
+                    "textAlign": "center",
+                    "fontSize": "22px"
+                }
+            ),
+            html.Hr(style={"borderColor": "#00f2ff", "opacity": 0.3}),
+
             dbc.Nav(
                 [
                     dbc.NavLink("🏠 HOME", href="/", active="exact"),
                     dbc.NavLink("📊 ANALYTICS", href="/dashboard", active="exact"),
                 ],
-                vertical=True, pills=True
+                vertical=True,
+                pills=True
             ),
-            html.Hr(),
+
+            html.Hr(style={"borderColor": "#00f2ff", "opacity": 0.3}),
             html.Div(id="filters-container")
         ]
     ),
 
-    html.Div(id="page-content", style={"marginLeft": "18rem"})
+    html.Div(
+        id="page-content",
+        style={"marginLeft": "18rem", "minHeight": "100vh"}
+    )
 ])
 
-# ===================== ROUTING =====================
+# ===================== PAGE ROUTING =====================
 @app.callback(
-    [Output("page-content", "children"),
-     Output("filters-container", "children")],
+    [
+        Output("page-content", "children"),
+        Output("filters-container", "children"),
+        Output("sidebar-container", "style")
+    ],
     Input("url", "pathname")
 )
 def render_page(pathname):
 
+    sidebar_style = {
+        "position": "fixed",
+        "top": 0,
+        "left": 0,
+        "bottom": 0,
+        "width": "18rem",
+        "padding": "2rem 1rem",
+        "backgroundColor": "#0a0c10",
+        "borderRight": "1px solid #1a1e26",
+        "zIndex": 100
+    }
+
     if pathname == "/dashboard":
+
         max_dt = df["Date_Only"].max()
 
         filters = [
-            html.Label("TIME RANGE"),
+            html.Label(
+                "TIME RANGE",
+                style={"fontSize": "11px", "color": "#8b949e"}
+            ),
             dcc.DatePickerRange(
                 id="d-picker",
                 start_date=max_dt - timedelta(days=7),
                 end_date=max_dt,
+                display_format="YYYY-MM-DD",
                 persistence=True
             ),
             html.Br(), html.Br(),
-            html.Label("HOUR (UTC)"),
+            html.Label(
+                "HOUR SELECTOR (UTC)",
+                style={"fontSize": "11px", "color": "#8b949e"}
+            ),
             dcc.Dropdown(
                 id="h-drop",
-                options=[{"label": f"{h:02d}", "value": h} for h in range(24)],
+                options=[
+                    {"label": f"{h:02d}:00", "value": h}
+                    for h in range(24)
+                ],
                 multi=True,
-                style={"color": "black"}
+                style={"color": "black"},
+                persistence=True
             )
         ]
 
-        layout = html.Div(style={"padding": "2rem"}, children=[
-            html.H2("METAR ANALYTICS", style={"color": "#00f2ff"}),
+        layout = html.Div(
+            style={"padding": "2.5rem", "backgroundColor": "#0d1117"},
+            children=[
+                html.H2(
+                    "OPERATIONAL METAR ANALYTICS",
+                    style={
+                        "fontFamily": "Orbitron",
+                        "color": "#00f2ff",
+                        "letterSpacing": "3px",
+                        "marginBottom": "40px"
+                    }
+                ),
 
-            html.Div(id="stats-row"),
+                html.Div(id="stats-row"),
 
-            dcc.Graph(id="temp-fig"),
-            dcc.Graph(id="dew-fig"),
-            dcc.Graph(id="pressure-fig"),
-            dcc.Graph(id="windspd-fig"),
-            dcc.Graph(id="vis-fig"),
-            dcc.Graph(id="winddir-fig"),
+                html.H3("🌡️ TEMPERATURE"),
+                dcc.Graph(id="t-line-big"),
 
-            html.H3("RAW METAR"),
-            html.Div(id="table-area")
-        ])
+                html.H3("❄️ DEW POINT"),
+                dcc.Graph(id="d-line-big"),
 
-        return layout, filters
+                html.H3("🌬️ WIND SPEED"),
+                dcc.Graph(id="windspd-fig"),
 
-    return html.H1("OYAA INTELHUB", style={"color": "white"}), []
+                html.H3("🧭 WIND DIRECTION"),
+                dcc.Graph(id="winddir-fig"),
+
+                html.H3("🌫️ VISIBILITY"),
+                dcc.Graph(id="vis-fig"),
+
+                html.H3("📉 PRESSURE"),
+                dcc.Graph(id="pressure-fig"),
+
+                html.H3("📜 SYSTEM LOGS"),
+                html.Div(id="metar-table-area")
+            ]
+        )
+
+        return layout, filters, sidebar_style
+
+    # ===== HOME PAGE =====
+    home = html.Div(
+        style={
+            "height": "100vh",
+            "marginLeft": "-18rem",
+            "display": "flex",
+            "justifyContent": "center",
+            "alignItems": "center",
+            "flexDirection": "column",
+            "backgroundColor": "#0d1117"
+        },
+        children=[
+            html.H1(
+                "OYAA INTELHUB",
+                style={
+                    "fontSize": "90px",
+                    "color": "white",
+                    "fontFamily": "Orbitron"
+                }
+            ),
+            html.A(
+                html.Button(
+                    "INITIATE ANALYTICS",
+                    style={
+                        "background": "transparent",
+                        "color": "#00f2ff",
+                        "border": "2px solid #00f2ff",
+                        "padding": "15px 40px"
+                    }
+                ),
+                href="/dashboard"
+            )
+        ]
+    )
+
+    return home, [], {"display": "none"}
 
 # ===================== MAIN CALLBACK =====================
 @app.callback(
     [
         Output("stats-row", "children"),
-        Output("temp-fig", "figure"),
-        Output("dew-fig", "figure"),
-        Output("pressure-fig", "figure"),
+        Output("t-line-big", "figure"),
+        Output("d-line-big", "figure"),
         Output("windspd-fig", "figure"),
-        Output("vis-fig", "figure"),
         Output("winddir-fig", "figure"),
-        Output("table-area", "children"),
+        Output("vis-fig", "figure"),
+        Output("pressure-fig", "figure"),
+        Output("metar-table-area", "children"),
     ],
     [
         Input("url", "pathname"),
@@ -154,9 +262,9 @@ def render_page(pathname):
     ],
     prevent_initial_call=True
 )
-def update_all(path, start, end, hours):
+def update_dashboard(pathname, start, end, hours):
 
-    if path != "/dashboard":
+    if pathname != "/dashboard":
         return [dash.no_update] * 8
 
     dff = df.copy()
@@ -170,37 +278,83 @@ def update_all(path, start, end, hours):
     if hours:
         dff = dff[dff["Hour"].isin(hours)]
 
+    dff = dff.sort_values("Full_Timestamp")
+
+    if dff.empty:
+        return (
+            html.Div("No Data Found", style={"color": "orange"}),
+            go.Figure(), go.Figure(), go.Figure(),
+            go.Figure(), go.Figure(), go.Figure(),
+            html.Div()
+        )
+
     # ===== STATS =====
     stats = dbc.Row([
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.H6("AVG TEMP"),
-            html.H3(f"{dff['Temp C'].mean():.1f} °C")
-        ])))
+        dbc.Col(
+            dbc.Card(
+                dbc.CardBody([
+                    html.H6("AVG TEMP"),
+                    html.H3(f"{dff['Temp C'].mean():.1f} °C")
+                ])
+            )
+        )
     ])
 
-    # ===== FIGURES =====
-    f_temp = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark")
-    f_dew = px.line(dff, x="Full_Timestamp", y="DewPoint", template="plotly_dark")
-    f_pres = px.line(dff, x="Full_Timestamp", y="Pressure hPa", template="plotly_dark")
-    f_wind = px.line(dff, x="Full_Timestamp", y="Wind Spd KT", template="plotly_dark")
-    f_vis = px.line(dff, x="Full_Timestamp", y="Visibility M", template="plotly_dark")
+    fig_t = px.line(
+        dff, x="Full_Timestamp", y="Temp C",
+        template="plotly_dark"
+    )
 
-    f_dir = px.scatter_polar(
-        dff, r="Wind Spd KT", theta="Wind Dir",
+    fig_d = px.line(
+        dff, x="Full_Timestamp", y="DewPoint",
+        template="plotly_dark"
+    )
+
+    fig_windspd = px.line(
+        dff, x="Full_Timestamp", y="Wind Spd KT",
+        template="plotly_dark"
+    )
+
+    fig_vis = px.line(
+        dff, x="Full_Timestamp", y="Visibility M",
+        template="plotly_dark"
+    )
+
+    fig_pressure = px.line(
+        dff, x="Full_Timestamp", y="Pressure hPa",
+        template="plotly_dark"
+    )
+
+    fig_winddir = px.scatter_polar(
+        dff,
+        r="Wind Spd KT",
+        theta="Wind Dir",
         template="plotly_dark"
     )
 
     table = dash_table.DataTable(
         data=dff[["Display_Time", "METAR"]].to_dict("records"),
         columns=[
-            {"name": "TIME", "id": "Display_Time"},
-            {"name": "METAR", "id": "METAR"}
+            {"name": "UTC TIME", "id": "Display_Time"},
+            {"name": "RAW METAR", "id": "METAR"}
         ],
-        style_table={"overflowY": "auto", "height": "300px"},
-        style_cell={"backgroundColor": "#0d1117", "color": "white"}
+        style_table={"height": "300px", "overflowY": "auto"},
+        style_cell={
+            "backgroundColor": "#0d1117",
+            "color": "#c9d1d9"
+        }
     )
 
-    return stats, f_temp, f_dew, f_pres, f_wind, f_vis, f_dir, table
+    return (
+        stats,
+        fig_t,
+        fig_d,
+        fig_windspd,
+        fig_winddir,
+        fig_vis,
+        fig_pressure,
+        table
+    )
 
 # ===================== RUN =====================
 if __name__ == "__main__":
