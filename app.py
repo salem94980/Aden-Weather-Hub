@@ -77,8 +77,11 @@ def render_page(pathname):
                 max_date_allowed=date(2030, 12, 31),
                 start_date=max_dt - timedelta(days=7),
                 end_date=max_dt,
-                month_format='MMMM YYYY',
                 display_format='DD/MM/YYYY',
+                month_format='MMM YYYY',
+                # التعديل الجديد: عرض شهرين معاً وتحسين التنقل
+                number_of_months_shown=2,
+                stay_open_on_select=False,
                 style={"backgroundColor": "#161b22"}
             ),
             html.Br(), html.Br(),
@@ -159,14 +162,13 @@ def update_dash(start, end, hours):
     
     if dff.empty: return [html.Div("No Data Found")] + [go.Figure()]*7 + [html.Div()]
 
-    # تم تعديل الأسماء لتظهر بالكامل بناءً على طلبك
+    # الأسماء الكاملة كما طلبت
     stats = dbc.Row([
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE TEMPERATURE"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("MINIMUM VISIBILITY"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
     ], className="mb-4 text-center")
 
-    # الرسوم البيانية
     f_t = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark", height=600).update_traces(line_color="#ff5f5f", line_width=4)
     f_d = px.line(dff, x="Full_Timestamp", y="DewPoint", template="plotly_dark", height=600).update_traces(line_color="#00f2ff", line_width=4)
     f_h = px.line(dff, x="Full_Timestamp", y="Humidity %", template="plotly_dark", height=500).update_traces(line_color="#00ff41")
