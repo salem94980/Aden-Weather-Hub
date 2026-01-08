@@ -69,7 +69,6 @@ def render_page(pathname):
     if pathname == "/dashboard":
         max_dt = df_main["Date_Only"].max() if not df_main.empty else date.today()
         
-        # التعديل الجذري لفلتر التاريخ هنا ليكون قابلاً لاختيار السنة والشهر بسهولة
         filters = [
             html.Label("TIME RANGE", style={"fontSize": "11px", "color": "#8b949e", "letterSpacing": "1.5px"}),
             dcc.DatePickerRange(
@@ -78,10 +77,8 @@ def render_page(pathname):
                 max_date_allowed=date(2030, 12, 31),
                 start_date=max_dt - timedelta(days=7),
                 end_date=max_dt,
-                # هذه الخصائص تجعل اختيار السنة والشهر متاحاً كقائمة منسدلة
                 month_format='MMMM YYYY',
                 display_format='DD/MM/YYYY',
-                calendar_orientation='vertical',
                 style={"backgroundColor": "#161b22"}
             ),
             html.Br(), html.Br(),
@@ -162,12 +159,14 @@ def update_dash(start, end, hours):
     
     if dff.empty: return [html.Div("No Data Found")] + [go.Figure()]*7 + [html.Div()]
 
+    # تم تعديل الأسماء لتظهر بالكامل بناءً على طلبك
     stats = dbc.Row([
-        dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVG TEMP"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
-        dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVG HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
-        dbc.Col(dbc.Card([dbc.CardBody([html.H6("MIN VIS"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
+        dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE TEMPERATURE"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
+        dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
+        dbc.Col(dbc.Card([dbc.CardBody([html.H6("MINIMUM VISIBILITY"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
     ], className="mb-4 text-center")
 
+    # الرسوم البيانية
     f_t = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark", height=600).update_traces(line_color="#ff5f5f", line_width=4)
     f_d = px.line(dff, x="Full_Timestamp", y="DewPoint", template="plotly_dark", height=600).update_traces(line_color="#00f2ff", line_width=4)
     f_h = px.line(dff, x="Full_Timestamp", y="Humidity %", template="plotly_dark", height=500).update_traces(line_color="#00ff41")
