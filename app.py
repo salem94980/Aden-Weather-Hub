@@ -16,75 +16,100 @@ def calculate_dewpoint(T, RH):
 # ===================== LOAD DATA =====================
 def load_data():
     try:
+        # قراءة ملف الإكسل - تأكد من رفعه على GitHub بنفس الاسم
         df = pd.read_excel("Aden_METAR_Final_Report.xlsx")
         df.columns = df.columns.str.strip()
+        
+        # دمج التاريخ والوقت
         df["Full_Timestamp"] = pd.to_datetime(df["Date"].astype(str) + " " + df["UTC"].astype(str), errors="coerce")
         df["Display_Time"] = df["Full_Timestamp"].dt.strftime('%Y-%m-%d   %H:%M')
         df["Date_Only"] = df["Full_Timestamp"].dt.date
         df["Hour"] = df["Full_Timestamp"].dt.hour
         
+        # تحويل البيانات إلى أرقام
         cols = ["Temp C", "Visibility M", "Humidity %", "Pressure hPa", "Wind Dir", "Lowest Cloud Base FT"]
         for col in cols:
             if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce")
         
+        # معالجة سرعة الرياح (استخراج الأرقام فقط)
         if "Wind Spd KT" in df.columns:
             df["Wind Spd KT"] = df["Wind Spd KT"].astype(str).str.extract(r"(\d+)").astype(float)
         
+        # معالجة حالات السماء والظواهر الجوية
         df["Sky Conditions"] = df["Sky Conditions"].fillna("SKC") if "Sky Conditions" in df.columns else "Unknown"
+        df["Present Weather"] = df["Present Weather"].fillna("NIL") if "Present Weather" in df.columns else "NIL"
+        
+        # حساب نقطة الندى
         df["DewPoint"] = df.apply(lambda x: calculate_dewpoint(x["Temp C"], x["Humidity %"]), axis=1)
         
         return df.dropna(subset=["Full_Timestamp"])
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error Loading Data: {e}")
         return pd.DataFrame()
 
 df_main = load_data()
 
-# ===================== DASH APP =====================
+# ===================== DASH APP SETUP =====================
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY], suppress_callback_exceptions=True)
 server = app.server
 
+# ستايل القائمة الجانبية الموحد
+SIDEBAR_STYLE = {
+    "position": "fixed", "top": 0, "left": 0, "bottom": 0, 
+    "width": "18rem", "padding": "2rem 1rem", "backgroundColor": "#0a0c10", 
+    "borderRight": "1px solid #1a1e26", "zIndex": 100
+}
+
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
-    
-    # القائمة الجانبية بتصميمها الأصلي
-    html.Div(id="sidebar-container", style={
-        "position": "fixed", "top": 0, "left": 0, "bottom": 0, 
-        "width": "18rem", "padding": "2rem 1rem", "backgroundColor": "#0a0c10", 
-        "borderRight": "1px solid #1a1e26", "zIndex": 100
-    }, children=[
-        html.H2("OYAA HUB", style={"fontFamily": "Orbitron", "color": "#00f2ff", "textAlign": "center", "fontSize": "22px"}),
-        html.Hr(style={"borderColor": "#00f2ff", "opacity": "0.3"}),
-        dbc.Nav([
-            dbc.NavLink("🏠 HOME", href="/", active="exact", style={"borderRadius": "8px", "marginBottom": "10px"}),
-            dbc.NavLink("📊 ANALYTICS", href="/dashboard", active="exact", style={"borderRadius": "8px"}),
-        ], vertical=True, pills=True),
-        html.Hr(style={"borderColor": "#00f2ff", "opacity": "0.3"}),
-        html.Div(id="filters-container")
-    ]),
-
+    html.Div(id="sidebar-container"),
     html.Div(id="page-content", style={"marginLeft": "18rem", "minHeight": "100vh"})
 ])
 
 # ===================== CALLBACKS =====================
 
 @app.callback(
-    [Output("page-content", "children"), Output("filters-container", "children"), Output("sidebar-container", "style")],
+    [Output("page-content", "children"), Output("sidebar-container", "children"), Output("sidebar-container", "style")],
     [Input("url", "pathname")]
 )
 def render_page(pathname):
-    # رابط الصورة المباشر من مستودعك
+    # رابط الصورة الخام من GitHub لضمان الظهور
     bg_image = "https://raw.githubusercontent.com/salem94980/Aden-Weather-Hub/main/assets/aden_airport.jpg"
 
     if pathname == "/dashboard":
         max_dt = df_main["Date_Only"].max() if not df_main.empty else date.today()
+        
+        # تحسين فلتر التاريخ ليكون أكثر سلاسة
         filters = [
             html.Label("TIME RANGE", style={"fontSize": "11px", "color": "#8b949e", "letterSpacing": "1.5px"}),
-            dcc.DatePickerRange(id="d-picker", start_date=max_dt - timedelta(days=7), end_date=max_dt),
+            dcc.DatePickerRange(
+                id="d-picker",
+                start_date=max_dt - timedelta(days=7),
+                end_date=max_dt,
+                display_format='YYYY-MM-DD',
+                persistence=True,
+                style={"backgroundColor": "#161b22"}
+            ),
             html.Br(), html.Br(),
             html.Label("HOUR SELECTOR (UTC)", style={"fontSize": "11px", "color": "#8b949e", "letterSpacing": "1.5px"}),
-            dcc.Dropdown(id="h-drop", options=[{"label": f"{h:02d}:00", "value": h} for h in range(24)], multi=True, style={"color": "black"})
+            dcc.Dropdown(
+                id="h-drop", 
+                options=[{"label": f"{h:02d}:00", "value": h} for h in range(24)], 
+                multi=True, 
+                style={"color": "black"}
+            )
         ]
+        
+        sidebar = html.Div(style=SIDEBAR_STYLE, children=[
+            html.H2("OYAA HUB", style={"fontFamily": "Orbitron", "color": "#00f2ff", "textAlign": "center", "fontSize": "22px"}),
+            html.Hr(style={"borderColor": "#00f2ff", "opacity": "0.3"}),
+            dbc.Nav([
+                dbc.NavLink("🏠 HOME", href="/", active="exact", style={"borderRadius": "8px", "marginBottom": "10px"}),
+                dbc.NavLink("📊 ANALYTICS", href="/dashboard", active="exact", style={"borderRadius": "8px"}),
+            ], vertical=True, pills=True),
+            html.Hr(style={"borderColor": "#00f2ff", "opacity": "0.3"}),
+            html.Div(filters)
+        ])
         
         layout = html.Div(style={"padding": "2.5rem", "backgroundColor": "#0d1117"}, children=[
             html.H2("OPERATIONAL METAR ANALYTICS", style={"fontFamily": "Orbitron", "color": "#00f2ff", "letterSpacing": "3px", "marginBottom": "40px"}),
@@ -114,13 +139,13 @@ def render_page(pathname):
             html.H3("📜 SYSTEM LOGS", style={"color": "#8b949e", "marginTop": "60px", "fontWeight": "bold"}),
             html.Div(id="metar-table-area", style={"marginBottom": "100px"})
         ])
-        return layout, filters, {"position": "fixed", "top": 0, "left": 0, "bottom": 0, "width": "18rem", "padding": "2rem 1rem", "backgroundColor": "#0a0c10", "borderRight": "1px solid #1a1e26", "zIndex": 100}
+        return layout, sidebar, SIDEBAR_STYLE
 
     # Landing Page
     home_layout = html.Div(style={
         "height": "100vh", "marginLeft": "-18rem",
         "backgroundImage": f'linear-gradient(rgba(10, 12, 16, 0.5), rgba(10, 12, 16, 0.9)), url("{bg_image}")',
-        "backgroundSize": "cover", "backgroundPosition": "center",
+        "backgroundSize": "cover", "backgroundPosition": "center", "backgroundAttachment": "fixed",
         "display": "flex", "flexDirection": "column", "justifyContent": "center", "alignItems": "center", "textAlign": "center"
     }, children=[
         html.H1("OYAA INTELHUB", style={"fontSize": "100px", "color": "#ffffff", "fontFamily": "Orbitron", "letterSpacing": "10px", "fontWeight": "900"}),
@@ -129,10 +154,10 @@ def render_page(pathname):
         html.Br(),
         html.A(html.Button("INITIATE ANALYTICS", style={
             "backgroundColor": "transparent", "color": "#00f2ff", "border": "2px solid #00f2ff",
-            "padding": "15px 45px", "fontSize": "18px", "fontFamily": "Orbitron", "cursor": "pointer"
+            "padding": "15px 45px", "fontSize": "18px", "fontFamily": "Orbitron", "cursor": "pointer", "borderRadius": "5px"
         }), href="/dashboard")
     ])
-    return home_layout, [], {"display": "none"}
+    return home_layout, None, {"display": "none"}
 
 @app.callback(
     [Output("stats-row", "children"), Output("t-line-big", "figure"), Output("d-line-big", "figure"), 
@@ -151,9 +176,10 @@ def update_dash(start, end, hours):
     stats = dbc.Row([
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVG TEMP"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVG HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
-        dbc.Col(dbc.Card([dbc.CardBody([html.H6("MIN VIS"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
+        dbc.Col(dbc.Card([dbc.CardBody([html.H6("MIN VISIBILITY"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
     ], className="mb-4 text-center")
 
+    # الرسوم البيانية السبعة
     f_t = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark", height=600).update_traces(line_color="#ff5f5f", line_width=4)
     f_d = px.line(dff, x="Full_Timestamp", y="DewPoint", template="plotly_dark", height=600).update_traces(line_color="#00f2ff", line_width=4)
     f_h = px.line(dff, x="Full_Timestamp", y="Humidity %", template="plotly_dark", height=500).update_traces(line_color="#00ff41")
