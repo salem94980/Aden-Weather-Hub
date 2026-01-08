@@ -18,6 +18,8 @@ def load_data():
     try:
         df = pd.read_excel("Aden_METAR_Final_Report.xlsx")
         df.columns = df.columns.str.strip()
+        
+        # تحويل التاريخ والوقت لضمان دقة الفلترة
         df["Full_Timestamp"] = pd.to_datetime(df["Date"].astype(str) + " " + df["UTC"].astype(str), errors="coerce")
         df["Display_Time"] = df["Full_Timestamp"].dt.strftime('%Y-%m-%d   %H:%M')
         df["Date_Only"] = df["Full_Timestamp"].dt.date
@@ -36,7 +38,7 @@ def load_data():
         
         return df.dropna(subset=["Full_Timestamp"])
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error Loading Data: {e}")
         return pd.DataFrame()
 
 df_main = load_data()
@@ -76,7 +78,6 @@ def render_page(pathname):
                 start_date=max_dt - timedelta(days=7),
                 end_date=max_dt,
                 display_format='YYYY-MM-DD',
-                # الحل الذكي: السماح للمستخدم بكتابة السنة يدوياً لتوفير الوقت
                 updatemode='both',
                 style={"backgroundColor": "#161b22"}
             ),
@@ -152,19 +153,29 @@ def render_page(pathname):
 )
 def update_dash(start, end, hours):
     if not start or not end: return [dash.no_update]*9
-    dff = df_main[(df_main["Date_Only"] >= date.fromisoformat(start)) & (df_main["Date_Only"] <= date.fromisoformat(end))]
-    if hours: dff = dff[dff["Hour"].isin(hours)]
+    
+    # إصلاح الفلترة: تحويل التواريخ لضمان الاستجابة
+    start_dt = pd.to_datetime(start).date()
+    end_dt = pd.to_datetime(end).date()
+    
+    dff = df_main[(df_main["Date_Only"] >= start_dt) & (df_main["Date_Only"] <= end_dt)]
+    
+    if hours: 
+        dff = dff[dff["Hour"].isin(hours)]
+    
     dff = dff.sort_values("Full_Timestamp")
     
-    if dff.empty: return [html.Div("No Data Found")] + [go.Figure()]*7 + [html.Div()]
+    if dff.empty: 
+        return [html.Div("No Data Found", style={"color": "red"})] + [go.Figure()]*7 + [html.Div()]
 
-    # الأسماء الكاملة (AVERAGE / MINIMUM)
+    # الإحصائيات بالأسماء الكاملة
     stats = dbc.Row([
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE TEMPERATURE"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("MINIMUM VISIBILITY"), html.H3(f"{dff['Visibility M'].min():.0f} m", style={"color": "#ffd33d"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
     ], className="mb-4 text-center")
 
+    # الرسوم البيانية
     f_t = px.line(dff, x="Full_Timestamp", y="Temp C", template="plotly_dark", height=600).update_traces(line_color="#ff5f5f", line_width=4)
     f_d = px.line(dff, x="Full_Timestamp", y="DewPoint", template="plotly_dark", height=600).update_traces(line_color="#00f2ff", line_width=4)
     f_h = px.line(dff, x="Full_Timestamp", y="Humidity %", template="plotly_dark", height=500).update_traces(line_color="#00ff41")
