@@ -30,8 +30,8 @@ def load_data():
         if "Wind Spd KT" in df.columns:
             df["Wind Spd KT"] = df["Wind Spd KT"].astype(str).str.extract(r"(\d+)").astype(float)
         
-        df["Sky Conditions"] = df["Sky Conditions"].fillna("SKC") if "Sky Conditions" in df.columns else "Unknown"
-        df["Present Weather"] = df["Present Weather"].fillna("NIL") if "Present Weather" in df.columns else "NIL"
+        df["Sky Conditions"] = df["Sky Conditions"].fillna("SKC")
+        df["Present Weather"] = df["Present Weather"].fillna("NIL")
         df["DewPoint"] = df.apply(lambda x: calculate_dewpoint(x["Temp C"], x["Humidity %"]), axis=1)
         
         return df.dropna(subset=["Full_Timestamp"])
@@ -73,15 +73,11 @@ def render_page(pathname):
             html.Label("TIME RANGE", style={"fontSize": "11px", "color": "#8b949e", "letterSpacing": "1.5px"}),
             dcc.DatePickerRange(
                 id="d-picker",
-                min_date_allowed=date(2010, 1, 1),
-                max_date_allowed=date(2030, 12, 31),
                 start_date=max_dt - timedelta(days=7),
                 end_date=max_dt,
-                display_format='DD/MM/YYYY',
-                month_format='MMM YYYY',
-                # التعديل الجديد: عرض شهرين معاً وتحسين التنقل
-                number_of_months_shown=2,
-                stay_open_on_select=False,
+                display_format='YYYY-MM-DD',
+                # الحل الذكي: السماح للمستخدم بكتابة السنة يدوياً لتوفير الوقت
+                updatemode='both',
                 style={"backgroundColor": "#161b22"}
             ),
             html.Br(), html.Br(),
@@ -143,7 +139,7 @@ def render_page(pathname):
         html.Br(),
         html.A(html.Button("INITIATE ANALYTICS", style={
             "backgroundColor": "transparent", "color": "#00f2ff", "border": "2px solid #00f2ff",
-            "padding": "15px 45px", "fontSize": "18px", "fontFamily": "Orbitron", "cursor": "pointer"
+            "padding": "15px 45px", "fontSize": "18px", "fontFamily": "Orbitron", "cursor": "pointer", "borderRadius": "5px"
         }), href="/dashboard")
     ])
     return home_layout, None, {"display": "none"}
@@ -162,7 +158,7 @@ def update_dash(start, end, hours):
     
     if dff.empty: return [html.Div("No Data Found")] + [go.Figure()]*7 + [html.Div()]
 
-    # الأسماء الكاملة كما طلبت
+    # الأسماء الكاملة (AVERAGE / MINIMUM)
     stats = dbc.Row([
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE TEMPERATURE"), html.H3(f"{dff['Temp C'].mean():.1f}°C", style={"color": "#ff5f5f"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
         dbc.Col(dbc.Card([dbc.CardBody([html.H6("AVERAGE HUMIDITY"), html.H3(f"{dff['Humidity %'].mean():.1f}%", style={"color": "#00f2ff"})])], style={"backgroundColor": "#161b22", "border": "1px solid #30363d"})),
